@@ -2,34 +2,29 @@
 import { ref, computed } from 'vue'
 
 // --- ข้อมูลหลักของเมนู ---
+const tableNumber = ref(5); // กำหนดหมายเลขโต๊ะ
 const prices = ref([
   { size: 'เล็ก', price: 20 },
   { size: 'ธรรมดา', price: 40 },
   { size: 'พิเศษ', price: 50 },
   { size: 'จุกๆ', price: 60 },
 ])
-// นำ 'ข้าวเปล่า' ออกจากหมวดนี้
 const noodleTypes = ref(['เส้นเล็ก', 'เส้นใหญ่', 'เส้นหมี่', 'บะหมี่', 'วุ้นเส้น', 'เกาเหลา'])
 const extraOptions = ref(['ไม่ผัก', 'ไม่เผ็ด', 'ไม่งอก', 'ไม่ชิ้น', 'ไม่ตับ', 'ไม่ผักบุ้ง', 'ลูกชิ้น'])
-
-// ===== START: ข้อมูลใหม่สำหรับเมนูอื่นๆ =====
-const showOtherMenu = ref(false); // State สำหรับซ่อน/แสดงเมนู
+const showOtherMenu = ref(false);
 const otherMenuItems = ref([
   { name: 'ข้าวเปล่า', price: 10 },
   { name: 'แคบหมู', price: 10 },
   { name: 'น้ำเปล่า', price: 10 },
   { name: 'น้ำอัดลม', price: 20 },
-  { name: 'หมูสะเต๊ะ (เล็ก)', price: 40 },
-  { name: 'หมูสะเต๊ะ (ใหญ่)', price: 80 },
 ]);
-// ===== END: ข้อมูลใหม่สำหรับเมนูอื่นๆ =====
-
 
 // --- State ---
 const selectedPriceInfo = ref(null)
 const selectedNoodle = ref(null)
 const selectedOptions = ref([])
 const order = ref([])
+const isSubmitting = ref(false); // State สำหรับสถานะกำลังส่งข้อมูล
 
 // --- Computed Properties ---
 const isReadyToAdd = computed(() => !!selectedPriceInfo.value && !!selectedNoodle.value)
@@ -50,91 +45,151 @@ function resetCurrentSelection() {
   selectedOptions.value = []
 }
 
+// ===== START: เพิ่มฟังก์ชันสำหรับส่งออเดอร์ =====
+
+/**
+ * ดึง user_id จาก localStorage หรือสร้างใหม่ถ้ายังไม่มี
+ * เพื่อให้ผู้ใช้คนเดิมจากเบราว์เซอร์เดิมมี ID คงที่
+ */
+function getUserId() {
+  let userId = localStorage.getItem('noodleShopUserId');
+  if (!userId) {
+    // สร้าง ID แบบสุ่มและเก็บไว้
+    userId = 'user_' + Date.now() + Math.floor(Math.random() * 1000);
+    localStorage.setItem('noodleShopUserId', userId);
+  }
+  return userId;
+}
+
+/**
+ * รวบรวมข้อมูลออเดอร์และส่งไปยัง API
+ */
+async function submitOrder() {
+  if (order.value.length === 0) {
+    alert('กรุณาเพิ่มรายการอาหารก่อนยืนยันการสั่งซื้อ');
+    return;
+  }
+  isSubmitting.value = true;
+
+  try {
+    // 1. แปลงข้อมูลรายการอาหารในตะกร้าให้ตรงตามฟอร์แมตของ API
+    const itemsPayload = order.value.map((item, index) => {
+      const isNoodleDish = item.size !== null; // เช็คว่าเป็นเมนูก๋วยเตี๋ยวหรือไม่
+      return {
+        item_number: index + 1,
+        menu_name: isNoodleDish ? "ก๋วยเตี๋ยว" : item.name,
+        noodle_type: item.name, // field นี้ใช้ชื่อเมนูไปเลยตามตัวอย่าง
+        size: item.size || '', // ถ้าเป็นเมนูอื่นที่ไม่มีขนาด ให้เป็นค่าว่าง
+        quantity: item.quantity,
+        unit_price: item.price,
+        sub_total: item.price * item.quantity,
+        item_notes: item.options || [],
+      };
+    });
+
+    const now = new Date();
+    // 2. สร้าง order_code
+    const codeTimestamp = now.getFullYear() +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      String(now.getDate()).padStart(2, '0') +
+      String(now.getHours()).padStart(2, '0') +
+      String(now.getMinutes()).padStart(2, '0') +
+      String(now.getSeconds()).padStart(2, '0');
+    
+    // 3. สร้าง Payload ทั้งหมดที่จะส่ง
+    const payload = {
+      table_number: String(tableNumber.value),
+      user_id: getUserId(),
+      order_timestamp: now.toISOString(),
+      status: "ai_confirmed",
+      total_amount: totalPrice.value,
+      items: itemsPayload,
+      order_code: `AI_CONFIRMED-${codeTimestamp}`,
+    };
+    
+    console.log("Sending payload:", JSON.stringify(payload, null, 2)); // แสดงข้อมูลที่จะส่งใน Console เพื่อตรวจสอบ
+
+    // 4. ส่งข้อมูลไปยัง API
+    const response = await fetch('https://tx9j0chj-5001.asse.devtunnels.ms/submit_order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      // จัดการกรณีที่ Server ตอบกลับมาเป็น Error
+      const errorData = await response.json().catch(() => ({ message: 'ไม่สามารถอ่านข้อมูลข้อผิดพลาดได้' }));
+      throw new Error(`Server ตอบกลับมาว่า: ${response.status} - ${errorData.message || 'ข้อผิดพลาดไม่ทราบสาเหตุ'}`);
+    }
+
+    const result = await response.json();
+    console.log('Order submitted successfully:', result);
+    alert('ส่งรายการสั่งซื้อเรียบร้อยแล้ว!');
+    
+    // 5. ล้างข้อมูลเมื่อส่งสำเร็จ
+    order.value = [];
+    selectedPriceInfo.value = null; // รีเซ็ตการเลือกราคาด้วย
+    resetCurrentSelection();
+
+  } catch (error) {
+    console.error('Failed to submit order:', error);
+    alert(`เกิดข้อผิดพลาดในการส่งรายการสั่งซื้อ: ${error.message}`);
+  } finally {
+    isSubmitting.value = false; // คืนค่าสถานะปุ่ม
+  }
+}
+
+// ===== END: เพิ่มฟังก์ชันสำหรับส่งออเดอร์ =====
+
 function selectPrice(priceInfo) {
   selectedPriceInfo.value = priceInfo
 }
-
 function selectNoodle(noodle) {
   selectedNoodle.value = noodle
 }
-
 function toggleOption(option) {
-  if (!selectedNoodle.value) {
-    alert('กรุณาเลือกเส้นก่อนเพิ่มหมายเหตุครับ')
-    return
-  }
+  if (!selectedNoodle.value) { return }
   const optionIndex = selectedOptions.value.indexOf(option)
-  if (optionIndex > -1) {
-    selectedOptions.value.splice(optionIndex, 1)
-  } else {
-    selectedOptions.value.push(option)
-  }
+  if (optionIndex > -1) { selectedOptions.value.splice(optionIndex, 1) } 
+  else { selectedOptions.value.push(option) }
 }
-
 function addItemToOrder() {
-  if (!isReadyToAdd.value) {
-    alert('กรุณาเลือก "ขนาดชาม" และ "เส้น" ให้ครบก่อนครับ')
-    return
-  }
-
+  if (!isReadyToAdd.value) { return }
   const itemId = createCompositeId(selectedNoodle.value, selectedPriceInfo.value.size, selectedOptions.value);
   const existingItem = order.value.find(item => item.id === itemId);
-
-  if (existingItem) {
-    existingItem.quantity++;
-  } else {
+  if (existingItem) { existingItem.quantity++; } 
+  else {
     order.value.push({
-      id: itemId,
-      name: selectedNoodle.value,
-      size: selectedPriceInfo.value.size,
-      price: selectedPriceInfo.value.price,
-      options: [...selectedOptions.value],
-      quantity: 1
+      id: itemId, name: selectedNoodle.value, size: selectedPriceInfo.value.size,
+      price: selectedPriceInfo.value.price, options: [...selectedOptions.value], quantity: 1
     });
   }
-  
   resetCurrentSelection()
 }
-
-// ===== START: ฟังก์ชันใหม่สำหรับเพิ่มเมนูอื่นๆ =====
 function addOtherItem(itemToAdd) {
-  // ใช้ชื่อเมนูเป็น ID เพราะไม่มีตัวเลือกอื่น
   const itemId = itemToAdd.name;
   const existingItem = order.value.find(item => item.id === itemId);
-
-  if (existingItem) {
-    existingItem.quantity++;
-  } else {
+  if (existingItem) { existingItem.quantity++; } 
+  else {
     order.value.push({
-      id: itemId,
-      name: itemToAdd.name,
-      size: null, // ไม่มีขนาดสำหรับเมนูเหล่านี้
-      price: itemToAdd.price,
-      options: [],
-      quantity: 1
+      id: itemId, name: itemToAdd.name, size: null,
+      price: itemToAdd.price, options: [], quantity: 1
     });
   }
 }
-// ===== END: ฟังก์ชันใหม่สำหรับเพิ่มเมนูอื่นๆ =====
-
-
 function increaseQuantity(itemId) {
   const item = order.value.find(p => p.id === itemId);
-  if (item) {
-    item.quantity++;
-  }
+  if (item) { item.quantity++; }
 }
-
 function decreaseQuantity(itemId) {
   const item = order.value.find(p => p.id === itemId);
   if (item) {
     item.quantity--;
-    if (item.quantity === 0) {
-      removeItem(itemId);
-    }
+    if (item.quantity === 0) { removeItem(itemId); }
   }
 }
-
 function removeItem(itemId) {
   order.value = order.value.filter(item => item.id !== itemId)
 }
@@ -148,7 +203,7 @@ function removeItem(itemId) {
         
         <div class="md:col-span-2 bg-white p-6 rounded-2xl shadow-sm">
           <header class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-slate-700">โต๊ะ 5</h1>
+            <h1 class="text-4xl font-bold text-slate-700">โต๊ะ {{ tableNumber }}</h1>
             <p class="text-slate-500 mt-1">กรุณาเลือกรายการอาหารทีละรายการ</p>
           </header>
            <section class="mb-8">
@@ -184,29 +239,21 @@ function removeItem(itemId) {
           </section>
 
           <section class="mt-6 pt-6 border-t">
-              <button 
-                  @click="showOtherMenu = !showOtherMenu" 
-                  class="w-full flex justify-between items-center text-left p-4 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors"
-              >
+              <button @click="showOtherMenu = !showOtherMenu" class="w-full flex justify-between items-center text-left p-4 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors">
                   <span class="text-xl font-bold text-slate-700">เมนูอื่น ๆ</span>
                   <svg :class="{'rotate-180': showOtherMenu}" class="w-6 h-6 transition-transform duration-300 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                   </svg>
               </button>
-
               <div v-if="showOtherMenu" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 animate-fade-in">
-                  <button
-                      v-for="item in otherMenuItems"
-                      :key="item.name"
-                      @click="addOtherItem(item)"
-                      class="p-4 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm"
-                  >
+                  <button v-for="item in otherMenuItems" :key="item.name" @click="addOtherItem(item)" class="p-4 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm">
                       <span class="block text-lg font-bold">{{ item.name }}</span>
                       <span class="block text-sm">{{ item.price }} บาท</span>
                   </button>
               </div>
           </section>
-          </div>
+
+        </div>
 
         <div class="md:col-span-1 bg-white p-6 rounded-2xl shadow-sm flex flex-col h-fit sticky top-8">
           <h2 class="text-2xl font-bold mb-4 border-b pb-3">สรุปรายการ (Order)</h2>
@@ -215,35 +262,27 @@ function removeItem(itemId) {
           </div>
           
           <div v-else class="flex-grow space-y-4 overflow-y-auto max-h-[60vh] p-1">
-            <div
-              v-for="(item, index) in order"
-              :key="item.id"
-              class="flex flex-col bg-slate-50 p-3 rounded-lg animate-fade-in shadow-sm"
-            >
+            <div v-for="(item, index) in order" :key="item.id" class="flex flex-col bg-slate-50 p-3 rounded-lg animate-fade-in shadow-sm">
               <p class="font-semibold text-slate-800 text-base">
                 {{ index + 1 }}. {{ item.name }}
                 <span class="text-red-500 font-bold ml-2">x {{ item.quantity }}</span>
               </p>
-              
               <div class="flex justify-between items-center mt-1.5">
                 <p v-if="item.size" class="text-sm text-slate-600 bg-slate-200 px-2 py-0.5 rounded-full">ขนาด {{ item.size }}</p>
                 <div v-else></div>
                 <p class="text-base font-bold text-slate-800">{{ item.price * item.quantity }} บาท</p>
               </div>
-
               <div v-if="item.options.length > 0" class="mt-2 text-sm text-amber-800 bg-amber-100 p-2 rounded-md">
                 <p class="break-words">
                   <span class="font-medium">หมายเหตุ:</span> {{ item.options.join(', ') }}
                 </p>
               </div>
-              
               <div class="flex justify-between items-center mt-2 border-t border-slate-200 pt-2">
                  <div class="flex items-center gap-2 bg-white rounded-full border border-slate-300 px-1">
                    <button @click="decreaseQuantity(item.id)" class="w-7 h-7 flex items-center justify-center text-lg font-bold text-red-500 rounded-full hover:bg-red-100 transition-colors">-</button>
                    <span class="font-bold w-6 text-center text-slate-700">{{ item.quantity }}</span>
                    <button @click="increaseQuantity(item.id)" class="w-7 h-7 flex items-center justify-center text-lg font-bold text-green-500 rounded-full hover:bg-green-100 transition-colors">+</button>
                  </div>
-                 
                  <button @click="removeItem(item.id)" class="text-gray-400 hover:text-red-600 p-1 rounded-full hover:bg-red-100 transition-colors" title="ลบรายการนี้ทั้งหมด">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" />
@@ -258,8 +297,8 @@ function removeItem(itemId) {
               <span>รวมทั้งหมด:</span>
               <span>{{ totalPrice }} บาท</span>
             </div>
-            <button class="w-full bg-blue-500 text-white font-bold py-3 mt-4 rounded-lg hover:bg-blue-600 transition-all">
-              ยืนยันการสั่งซื้อ
+            <button @click="submitOrder" :disabled="isSubmitting" class="w-full bg-blue-500 text-white font-bold py-3 mt-4 rounded-lg hover:bg-blue-600 transition-all disabled:bg-slate-400 disabled:cursor-wait">
+              {{ isSubmitting ? 'กำลังส่ง...' : 'ยืนยันการสั่งซื้อ' }}
             </button>
           </div>
         </div>
