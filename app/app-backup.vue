@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue'
-import Modal from './Modal.vue' // ตรวจสอบว่ามีไฟล์ Modal.vue อยู่ในที่เดียวกัน
+import Modal from './Modal.vue'
 
 // --- การตั้งค่าและข้อมูลหลัก ---
-const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms'; // URL หลักของ API
+const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms/submit_order';
 const tableNumber = ref(5);
 
 const prices = ref([
@@ -44,11 +44,6 @@ const showOtherMenu = ref(false);
 const showNotes = ref(false);
 const showTableSelection = ref(false);
 
-// --- State สำหรับฟีเจอร์เช็คบิล ---
-const showCheckBillModal = ref(false);
-const activeTables = ref([]);
-const isLoadingActiveTables = ref(false);
-
 // --- State และฟังก์ชันสำหรับ Scroll และ Badge ---
 const orderSummaryEl = ref(null);
 
@@ -88,30 +83,6 @@ const totalPrice = computed(() => {
 });
 
 // --- Functions ---
-
-async function openCheckBillModal() {
-  isLoadingActiveTables.value = true;
-  showCheckBillModal.value = true;
-  try {
-    const response = await fetch(`${API_URL}/active_orders`);
-    if (!response.ok) {
-      throw new Error('ไม่สามารถดึงข้อมูลโต๊ะได้');
-    }
-    activeTables.value = await response.json();
-  } catch (error) {
-    console.error("Error fetching active tables:", error);
-    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลโต๊ะที่ใช้งานได้', 'error');
-    showCheckBillModal.value = false;
-  } finally {
-    isLoadingActiveTables.value = false;
-  }
-}
-
-function loadOrderForTable(tableNum) {
-  alert(`กำลังจะโหลดออเดอร์ของโต๊ะ ${tableNum}...\n(ขั้นต่อไปคือการสร้างหน้าใหม่สำหรับเช็คบิล)`);
-  showCheckBillModal.value = false;
-}
-
 function selectTable(newTableNumber) {
   tableNumber.value = newTableNumber;
   showTableSelection.value = false;
@@ -137,18 +108,8 @@ async function submitOrder() {
     const itemsPayload=sortedOrder.map((item,index)=>{const t=null!==item.size;return{item_number:index+1,menu_name:t?"ก๋วยเตี๋ยว":item.name,noodle_type:t?item.name:"",size:item.size||"",quantity:item.quantity,unit_price:item.price,sub_total:item.price*item.quantity,item_notes:item.options||[]}});
     const now=new Date;
     const codeTimestamp=now.getFullYear()+String(now.getMonth()+1).padStart(2,"0")+String(now.getDate()).padStart(2,"0")+String(now.getHours()).padStart(2,"0")+String(now.getMinutes()).padStart(2,"0")+String(now.getSeconds()).padStart(2,"0");
-    
-    const payload={
-        table_number:String(tableNumber.value),
-        user_id:getUserId(),
-        order_timestamp:now.toISOString(),
-        status:"open", // **ใช้สถานะ 'open' ตามที่กำหนด**
-        total_amount:totalPrice.value,
-        items:itemsPayload,
-        order_code:`ORDER-${codeTimestamp}`
-    };
-
-    const response=await fetch(`${API_URL}/submit_order`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const payload={table_number:String(tableNumber.value),user_id:getUserId(),order_timestamp:now.toISOString(),status:"ai_confirmed",total_amount:totalPrice.value,items:itemsPayload,order_code:`AI_CONFIRMED-${codeTimestamp}`};
+    const response=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     if(!response.ok){const t=await response.json().catch(()=>({message:"ไม่สามารถอ่านข้อมูลข้อผิดพลาดได้"}));throw new Error(`Server ตอบกลับมาว่า: ${response.status} - ${t.message||"ข้อผิดพลาดไม่ทราบสาเหตุ"}`)}
     const result=await response.json();
     console.log("Order submitted successfully:",result);
@@ -290,34 +251,6 @@ function removeItem(itemId) {
       </div>
   </div>
 
-  <div v-if="showCheckBillModal" @click.self="showCheckBillModal = false" class="z-50 fixed inset-0 bg-black/60 flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg animate-fade-in">
-          <div class="flex justify-between items-center mb-6">
-              <h3 class="text-2xl font-bold">เลือกโต๊ะเพื่อเช็คบิล</h3>
-              <button @click="showCheckBillModal = false" class="text-gray-400 hover:text-gray-600">
-                  <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-              </button>
-          </div>
-          <div v-if="isLoadingActiveTables" class="text-center p-8">
-              <p>กำลังโหลดข้อมูลโต๊ะ...</p>
-          </div>
-          <div v-else-if="activeTables.length === 0" class="text-center p-8 bg-slate-50 rounded-lg">
-              <p class="text-slate-500">ไม่มีโต๊ะที่กำลังใช้งาน</p>
-          </div>
-          <div v-else class="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              <button
-                  v-for="table in activeTables"
-                  :key="table.table_number"
-                  @click="loadOrderForTable(table.table_number)"
-                  class="p-4 rounded-lg border-2 text-center transition-all bg-slate-50 hover:bg-orange-100 hover:border-orange-400"
-              >
-                  <span class="block text-xl font-bold">โต๊ะ {{ table.table_number }}</span>
-                  <span class="block text-sm text-slate-600">{{ table.total_amount }} บาท</span>
-              </button>
-          </div>
-      </div>
-  </div>
-
 
   <main class="bg-slate-100 min-h-screen font-sans text-slate-800">
 
@@ -334,18 +267,10 @@ function removeItem(itemId) {
         
         <div class="md:col-span-3 bg-white p-6 rounded-2xl shadow-sm">
           
-          <header class="mb-8 flex justify-between items-center">
-            <div>
-              <button @click="showTableSelection = true" class="text-left p-2 -m-2 rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">
-                <h1 class="text-4xl font-bold text-slate-700">โต๊ะ {{ tableNumber }}</h1>
-                <p class="text-slate-500 mt-1">กดเพื่อเปลี่ยนหมายเลขโต๊ะ</p>
-              </button>
-            </div>
-            <button @click="openCheckBillModal" class="bg-orange-500 text-white font-bold py-3 px-5 rounded-lg shadow-md hover:bg-orange-600 transition-all flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                เช็คบิล
+          <header class="mb-8">
+            <button @click="showTableSelection = true" class="w-full text-left p-2 -m-2 rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">
+              <h1 class="text-4xl font-bold text-slate-700">โต๊ะ {{ tableNumber }}</h1>
+              <p class="text-slate-500 mt-1">กดเพื่อเปลี่ยนหมายเลขโต๊ะ</p>
             </button>
           </header>
           
@@ -410,7 +335,6 @@ function removeItem(itemId) {
                     <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                   </svg>
               </button>
-              
               <div v-if="showOtherMenu" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 animate-fade-in">
                   <button
                       v-for="item in otherMenuItems"
