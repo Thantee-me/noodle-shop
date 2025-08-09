@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 // --- การตั้งค่าและข้อมูลหลัก ---
@@ -37,6 +37,7 @@ const modalState = ref({ show: false, title: '', message: '', status: 'success' 
 const modalTimer = ref(null);
 const isLoadingOrder = ref(true);
 
+// --- Logic หลักของหน้า ---
 async function fetchExistingOrder() {
   isLoadingOrder.value = true;
   order.value = [];
@@ -51,7 +52,8 @@ async function fetchExistingOrder() {
         size: item.size || null,
         price: item.unit_price,
         options: Array.isArray(item.item_notes) ? item.item_notes : [],
-        quantity: item.quantity
+        quantity: item.quantity,
+        isNew: false // **เพิ่มสถานะ: บอกว่าเป็นรายการเก่า**
       }));
       order.value = mappedItems;
     }
@@ -61,62 +63,41 @@ async function fetchExistingOrder() {
     isLoadingOrder.value = false;
   }
 }
+onMounted(() => { fetchExistingOrder(); });
 
-onMounted(() => {
-  fetchExistingOrder();
-});
-
-// ===== START: แก้ไขฟังก์ชัน checkoutAndPrint =====
 async function checkoutAndPrint() {
-    // 1. อัปเดตรายการครั้งสุดท้ายก่อนเช็คบิล
     await submitOrder({ showAlert: false, printTicket: false });
-
     isSubmitting.value = true;
     try {
-        // 2. เรียก API ไปยัง URL ที่ถูกต้อง (มีหมายเลขโต๊ะ) และไม่ต้องส่ง body
         const response = await fetch(`${API_URL}/order/${tableNumber.value}/checkout`, { 
           method: 'POST' 
         });
-
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'ไม่สามารถเช็คบิลได้');
         }
         await response.json();
         showModal('เช็คบิลสำเร็จ', `โต๊ะ ${tableNumber.value} เช็คบิลเรียบร้อยแล้ว`, 'success');
-        
-        // 3. กลับไปหน้าหลัก
         setTimeout(() => {
             router.push('/');
         }, 2500);
-        
     } catch (error) {
         console.error("Checkout failed:", error);
         showModal('เกิดข้อผิดพลาด', error.message, 'error');
         isSubmitting.value = false;
     }
 }
-// ===== END: แก้ไขฟังก์ชัน checkoutAndPrint =====
 
-
-// ... (ฟังก์ชันที่เหลือทั้งหมดเหมือนเดิม) ...
-const totalQuantity = computed(() => { if (!order.value || order.value.length === 0) return 0; return order.value.reduce((sum, item) => sum + item.quantity, 0); });
-function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.value.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
-function showModal(title, message, status = 'success') { if (modalTimer.value) clearTimeout(modalTimer.value); modalState.value = { show: true, title, message, status }; if (status === 'success') { modalTimer.value = setTimeout(closeModal, 2500); } }
-function closeModal() { if (modalTimer.value) clearTimeout(modalTimer.value); modalState.value.show = false; }
+// --- Computed Properties ---
+const totalQuantity = computed(() => order.value.reduce((sum, item) => sum + item.quantity, 0));
 const isReadyToAdd = computed(() => !!selectedPriceInfo.value && !!selectedNoodle.value);
-const totalPrice = computed(() => { return order.value.reduce((sum, item) => sum + (item.price * item.quantity), 0); });
+const totalPrice = computed(() => order.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
+
+// --- Functions ---
+function showModal(title, message, status = 'success') { if (modalTimer.value) clearTimeout(modalTimer.value); modalState.value = { show: true, title, message, status }; if (status === 'success') { setTimeout(closeModal, 2500); } }
+function closeModal() { if (modalTimer.value) clearTimeout(modalTimer.value); modalState.value.show = false; }
 function getUserId() { let userId = localStorage.getItem('noodleShopUserId'); if (!userId) { userId = 'user_' + Date.now() + Math.floor(Math.random() * 1000); localStorage.setItem('noodleShopUserId', userId); } return userId; }
-function createCompositeId(name, size, options) { const sortedOptions = [...options].sort().join(','); return `${name}-${size}-${sortedOptions}`; }
-function resetCurrentSelection() { selectedNoodle.value = null; selectedOptions.value = []; showNotes.value = false; }
-function selectPrice(priceInfo) { selectedPriceInfo.value = priceInfo; }
-function selectNoodle(noodleObject) { selectedNoodle.value = noodleObject; }
-function toggleOption(option) { if (!selectedNoodle.value) { alert('กรุณาเลือกเส้นก่อนครับ'); return; } const index = selectedOptions.value.indexOf(option); if (index > -1) { selectedOptions.value.splice(index, 1); } else { selectedOptions.value.push(option); } }
-function addOtherItem(itemToAdd) { const itemId = itemToAdd.name; const existingItem = order.value.find(item => item.id === itemId); if (existingItem) { existingItem.quantity++; } else { order.value.push({ id: itemId, name: itemToAdd.name, size: null, price: itemToAdd.price, options: [], quantity: 1 }); } }
-function increaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity++; } }
-function decreaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity--; if (item.quantity === 0) { removeItem(itemId); } } }
-function removeItem(itemId) { order.value = order.value.filter(item => item.id !== itemId); }
-function addItemToOrder() { if (!isReadyToAdd.value) { alert('กรุณาเลือกขนาดชามและเส้นก่อนครับ'); return; } const itemId = createCompositeId(selectedNoodle.value.name, selectedPriceInfo.value.size, selectedOptions.value); const existingItem = order.value.find(item => item.id === itemId); if (existingItem) { existingItem.quantity++; } else { order.value.push({ id: itemId, name: selectedNoodle.value.name, size: selectedPriceInfo.value.size, price: selectedPriceInfo.value.price, options: [...selectedOptions.value], quantity: 1 }); } resetCurrentSelection(); }
+
 async function submitOrder(options = {}) {
   const { showAlert = true, printTicket = true } = options;
   if (order.value.length === 0) { 
@@ -139,11 +120,13 @@ async function submitOrder(options = {}) {
     };
     const response=await fetch(`${API_URL}/submit_order`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     if(!response.ok){const t=await response.json().catch(()=>({message:"ไม่สามารถอ่านข้อมูลข้อผิดพลาดได้"}));throw new Error(`Server ตอบกลับมาว่า: ${response.status} - ${t.message||"ข้อผิดพลาดไม่ทราบสาเหตุ"}`)}
-    const result=await response.json();
-    console.log("Order updated successfully:",result);
+    
     if(showAlert) { 
       showModal("อัปเดตสำเร็จ","อัปเดตรายการอาหารเรียบร้อย!","success"); 
     }
+    // **หลังจากอัปเดตสำเร็จ ให้ดึงข้อมูลใหม่ทั้งหมด ซึ่ง isNew จะกลายเป็น false**
+    await fetchExistingOrder();
+
   } catch(error){
     console.error("Failed to update order:",error);
     if(showAlert) { 
@@ -153,6 +136,50 @@ async function submitOrder(options = {}) {
     isSubmitting.value=false 
   }
 }
+
+function createCompositeId(name, size, options) { const sortedOptions = [...options].sort().join(','); return `${name}-${size}-${sortedOptions}`; }
+function resetCurrentSelection() { selectedNoodle.value = null; selectedOptions.value = []; showNotes.value = false; }
+function selectPrice(priceInfo) { selectedPriceInfo.value = priceInfo; }
+function selectNoodle(noodleObject) { selectedNoodle.value = noodleObject; }
+function toggleOption(option) { if (!selectedNoodle.value) { alert('กรุณาเลือกเส้นก่อนครับ'); return; } const index = selectedOptions.value.indexOf(option); if (index > -1) { selectedOptions.value.splice(index, 1); } else { selectedOptions.value.push(option); } }
+
+// ===== START: แก้ไขฟังก์ชัน addOtherItem และ addItemToOrder =====
+function addOtherItem(itemToAdd) {
+  const itemId = itemToAdd.name;
+  const existingItemIndex = order.value.findIndex(item => item.id === itemId && !item.isNew);
+  
+  if (existingItemIndex > -1) {
+    const existingItem = order.value[existingItemIndex];
+    existingItem.quantity++;
+    existingItem.isNew = true; // ทำเครื่องหมายว่ามีการเปลี่ยนแปลง
+    const [item] = order.value.splice(existingItemIndex, 1);
+    order.value.unshift(item);
+  } else {
+    order.value.unshift({ id: itemId, name: itemToAdd.name, size: null, price: itemToAdd.price, options: [], quantity: 1, isNew: true });
+  }
+}
+
+function addItemToOrder() {
+  if (!isReadyToAdd.value) { alert('กรุณาเลือกขนาดชามและเส้นก่อนครับ'); return; }
+  const itemId = createCompositeId(selectedNoodle.value.name, selectedPriceInfo.value.size, selectedOptions.value);
+  const existingItemIndex = order.value.findIndex(item => item.id === itemId && !item.isNew);
+
+  if (existingItemIndex > -1) {
+    const existingItem = order.value[existingItemIndex];
+    existingItem.quantity++;
+    existingItem.isNew = true; // ทำเครื่องหมายว่ามีการเปลี่ยนแปลง
+    const [item] = order.value.splice(existingItemIndex, 1);
+    order.value.unshift(item);
+  } else {
+    order.value.unshift({ id: itemId, name: selectedNoodle.value.name, size: selectedPriceInfo.value.size, price: selectedPriceInfo.value.price, options: [...selectedOptions.value], quantity: 1, isNew: true });
+  }
+  resetCurrentSelection();
+}
+// ===== END: แก้ไขฟังก์ชัน =====
+
+function increaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity++; item.isNew = true; } }
+function decreaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity--; item.isNew = true; if (item.quantity === 0) { removeItem(itemId); } } }
+function removeItem(itemId) { order.value = order.value.filter(item => item.id !== itemId); }
 </script>
 
 <template>
@@ -165,7 +192,6 @@ async function submitOrder(options = {}) {
   />
   
   <main class="bg-slate-100 min-h-screen font-sans text-slate-800">
-
     <button v-if="totalQuantity > 0" @click="scrollToOrderSummary" class="z-40 fixed top-6 right-6 flex items-center justify-center w-12 h-12 bg-red-500 text-white rounded-full shadow-lg ring-4 ring-white/50 animate-fade-in transition-transform hover:scale-110" title="ไปที่สรุปรายการ">
       <span class="text-xl font-bold">{{ totalQuantity }}</span>
     </button>
@@ -173,7 +199,6 @@ async function submitOrder(options = {}) {
       <div class="grid grid-cols-1 md:grid-cols-5 gap-8 max-w-7xl mx-auto">
         
         <div class="md:col-span-3 bg-white p-6 rounded-2xl shadow-sm printable-hidden">
-          
           <header class="mb-8 flex justify-between items-center">
             <div class="text-left">
               <h1 class="text-4xl font-bold text-slate-700">เช็คบิล: โต๊ะ {{ tableNumber }}</h1>
@@ -183,20 +208,15 @@ async function submitOrder(options = {}) {
                 กลับหน้าหลัก
             </NuxtLink>
           </header>
-
           <section class="mb-8">
-              <button @click="showOtherMenu = !showOtherMenu" class="w-full flex justify-between items-center text-left p-4 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors">
-                  <span class="text-xl font-bold text-slate-700">เมนูอื่น ๆ</span>
-                  <svg :class="{'rotate-180': showOtherMenu}" class="w-6 h-6 transition-transform duration-300 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-              </button>
-              <div v-if="showOtherMenu" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 animate-fade-in">
-                  <button v-for="item in otherMenuItems" :key="item.name" @click="addOtherItem(item)" class="p-4 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm">
-                      <span class="block text-lg font-bold">{{ item.name }}</span>
-                      <span class="block text-sm">{{ item.price }} บาท</span>
+              <h2 class="text-xl font-bold text-slate-700 mb-4">เมนูอื่น ๆ</h2>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <button v-for="item in otherMenuItems" :key="item.name" @click="addOtherItem(item)" class="p-2 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm flex flex-col justify-center min-h-[6rem]">
+                      <span class="block text-base font-bold break-words">{{ item.name }}</span>
+                      <span class="block text-sm mt-1">{{ item.price }} บาท</span>
                   </button>
               </div>
           </section>
-          
           <section class="mb-8">
             <h2 class="text-xl font-semibold border-b pb-3 mb-4">1. เลือกขนาดชาม</h2>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -211,7 +231,7 @@ async function submitOrder(options = {}) {
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               <button v-for="noodle in noodleTypes" :key="noodle.name" @click="selectNoodle(noodle)" :class="['border-2 rounded-lg transition-all duration-200 overflow-hidden flex flex-col justify-between', selectedNoodle?.name === noodle.name ? 'border-sky-500 bg-sky-100 ring-2 ring-sky-300' : 'bg-slate-50 border-slate-200 hover:border-sky-400']">
                 <img v-if="noodle.imageUrl" :src="noodle.imageUrl" :alt="noodle.name" class="w-full h-20 object-cover">
-                <div v-else class="w-full h-20 bg-slate-200 flex items-center justify-center text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 S0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                <div v-else class="w-full h-20 bg-slate-200 flex items-center justify-center text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
                 <span class="block text-center font-semibold p-2">{{ noodle.name }}</span>
               </button>
             </div>
@@ -237,16 +257,21 @@ async function submitOrder(options = {}) {
 
         <div ref="orderSummaryEl" class="md:col-span-2 bg-white p-6 rounded-2xl shadow-sm flex flex-col h-fit sticky top-8 printable-area">
           <h2 class="text-2xl font-bold mb-4 border-b pb-3">สรุปรายการ (Order)</h2>
-          
           <div v-if="isLoadingOrder" class="text-center text-slate-500 py-16">
             <p>กำลังโหลดรายการ...</p>
           </div>
           <div v-else-if="!isLoadingOrder && order.length === 0" class="text-center text-slate-500 py-16">
             <p>ไม่พบรายการสำหรับโต๊ะนี้</p>
           </div>
-
           <div v-else class="flex-grow space-y-4 overflow-y-auto max-h-[60vh] p-1">
-            <div v-for="(item, index) in order" :key="item.id" class="flex flex-col bg-slate-50 p-3 rounded-lg animate-fade-in shadow-sm">
+            <div 
+              v-for="(item, index) in order" 
+              :key="item.id" 
+              :class="[
+                'flex flex-col p-3 rounded-lg animate-fade-in shadow-sm',
+                item.isNew ? 'bg-blue-50' : 'bg-slate-50'
+              ]"
+            >
               <p class="font-semibold text-slate-800 text-base">
                 {{ index + 1 }}. {{ item.name }}
                 <span class="text-red-500 font-bold ml-2">x {{ item.quantity }}</span>
@@ -273,14 +298,13 @@ async function submitOrder(options = {}) {
               </div>
             </div>
           </div>
-          
           <div v-if="order.length > 0" class="border-t mt-6 pt-4 printable-hidden">
             <div class="flex justify-between items-center text-xl font-bold">
               <span>รวมทั้งหมด:</span>
               <span>{{ totalPrice }} บาท</span>
             </div>
             <div class="mt-4 grid grid-cols-2 gap-3">
-                <button @click="submitOrder()" :disabled="isSubmitting" class="w-full bg-blue-500 text-white font-bold py-3 rounded-lg hover:bg-blue-600 transition-all disabled:bg-slate-400">
+                <button @click="submitOrder({showAlert: true, printTicket: true})" :disabled="isSubmitting" class="w-full bg-blue-500 text-white font-bold py-3 rounded-lg hover:bg-blue-600 transition-all disabled:bg-slate-400">
                   {{ isSubmitting ? 'กำลังอัปเดต...' : 'อัปเดตรายการ' }}
                 </button>
                 <button @click="checkoutAndPrint" :disabled="isSubmitting" class="w-full bg-teal-500 text-white font-bold py-3 rounded-lg hover:bg-teal-600 transition-all disabled:bg-slate-400">
