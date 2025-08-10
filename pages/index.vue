@@ -306,18 +306,16 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
             </button>
           </section>
           
-           <section class="mt-6 pt-6 border-t">
-              <button @click="showOtherMenu = !showOtherMenu" class="w-full flex justify-between items-center text-left p-4 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors">
-                  <span class="text-xl font-bold text-slate-700">เมนูอื่น ๆ</span>
-                  <svg :class="{'rotate-180': showOtherMenu}" class="w-6 h-6 transition-transform duration-300 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-              </button>
-              <div v-if="showOtherMenu" class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 animate-fade-in">
-                  <button v-for="item in otherMenuItems" :key="item.name" @click="addOtherItem(item)" class="p-4 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm">
-                      <span class="block text-lg font-bold">{{ item.name }}</span>
-                      <span class="block text-sm">{{ item.price }} บาท</span>
-                  </button>
-              </div>
-          </section>
+        <section class="mt-6 pt-6 border-t">
+            <h2 class="text-xl font-bold text-slate-700 mb-4">เมนูอื่น ๆ</h2>
+
+            <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 animate-fade-in">
+                <button v-for="item in otherMenuItems" :key="item.name" @click="addOtherItem(item)" class="p-4 rounded-lg border-2 text-center bg-white hover:border-emerald-400 hover:bg-emerald-50 transition-all shadow-sm">
+                    <span class="block text-lg font-bold">{{ item.name }}</span>
+                    <span class="block text-sm">{{ item.price }} บาท</span>
+                </button>
+            </div>
+        </section>
         </div>
 
         <div ref="orderSummaryEl" class="md:col-span-2 bg-white p-6 rounded-2xl shadow-sm flex flex-col h-fit sticky top-8">
