@@ -10,5 +10,11 @@ export default defineNuxtConfig({
       hashMode: false, // ใช้ URL สวยงาม (ไม่ใช่ /#/start-order)
     }
   },
+  runtimeConfig: {
+    public: {
+      // ชื่อตรงนี้ (apiUrl) ต้องตรงกับที่ใช้ใน <script>
+      apiUrl: process.env.NUXT_PUBLIC_API_URL 
+    }
+  },
   modules: ['@nuxtjs/tailwindcss']
 })

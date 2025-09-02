@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import Modal from './Modal.vue'
 
 // --- การตั้งค่าและข้อมูลหลัก ---
-const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms/submit_order';
+const API_URL = 'https://tx9j0chj-5002.asse.devtunnels.ms/submit_order';
 const tableNumber = ref(5);
 
 const prices = ref([

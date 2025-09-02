@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 
-// --- การตั้งค่าและข้อมูลหลัก ---
-const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms';
+const config = useRuntimeConfig();
+const API_URL = config.public.apiUrl;
 const tableNumber = ref(null);
 
 // --- Refs สำหรับ Auto-Scrolling ---
@@ -10,72 +10,199 @@ const sizeSectionEl = ref(null);
 const noodleSectionEl = ref(null);
 const addToOrderButtonEl = ref(null);
 
-// ===== START: แก้ไขส่วนข้อมูลเมนู =====
-// 1. ตั้งค่าเริ่มต้นให้เป็น Array ว่าง
+// --- State สำหรับข้อมูลจาก API ---
 const prices = ref([]);
 const noodleTypes = ref([]);
 const extraOptions = ref([]);
 const otherMenuItems = ref([]);
+const allTables = ref([]);
 
-// 2. สร้างฟังก์ชันสำหรับดึงข้อมูลเมนู
+// --- State อื่นๆ ---
+const selectedPriceInfo = ref(null);
+const selectedNoodle = ref(null);
+const selectedOptions = ref([]);
+const order = ref([]);
+const isSubmitting = ref(false);
+const showNotes = ref(true); // ✅ <<<< แก้ไขตรงนี้: ทำให้หมายเหตุเปิดเป็นค่าเริ่มต้น
+const showTableSelection = ref(false);
+const showCheckBillModal = ref(false);
+const orderSummaryEl = ref(null);
+const modalState = ref({ show: false, title: '', message: '', status: 'success' });
+const modalTimer = ref(null);
+const activeTables = ref([]);
+const isLoadingActiveTables = ref(false);
+const isLoadingTablesForSelection = ref(false);
+const showAllNotes = ref(false);
+
+// --- Computed Properties ---
+const initialNotes = computed(() => extraOptions.value.slice(0, 5));
+const totalPrice = computed(() => order.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
+const totalQuantity = computed(() => order.value.reduce((sum, item) => sum + item.quantity, 0));
+const isReadyToAdd = computed(() => !!selectedPriceInfo.value && !!selectedNoodle.value);
+
+// --- ฟังก์ชันดึงข้อมูลตอนเริ่มต้น ---
 async function fetchMenuData() {
   try {
     const response = await fetch(`${API_URL}/menu`);
-    if (!response.ok) {
-      throw new Error('ไม่สามารถโหลดข้อมูลเมนูได้');
-    }
+    if (!response.ok) throw new Error('ไม่สามารถโหลดข้อมูลเมนูได้');
     const menuData = await response.json();
-
-    // 3. นำข้อมูลที่ได้จาก API มาใส่ใน State
     prices.value = menuData.prices;
     noodleTypes.value = menuData.noodleTypes;
     extraOptions.value = menuData.extraOptions;
     otherMenuItems.value = menuData.otherMenuItems;
-
   } catch (error) {
     console.error("Failed to fetch menu data:", error);
     showModal('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลเมนูได้ กรุณาลองใหม่', 'error');
   }
 }
 
-// 4. สั่งให้ฟังก์ชันทำงานทันทีที่เปิดหน้า
+async function fetchAllTables() {
+  try {
+    const response = await fetch(`${API_URL}/tables`);
+    if (!response.ok) throw new Error('ไม่สามารถโหลดข้อมูลโต๊ะได้');
+    allTables.value = await response.json();
+  } catch (error) {
+    console.error("Failed to fetch tables:", error);
+    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลโต๊ะได้', 'error');
+  }
+}
+
 onMounted(() => {
-  fetchMenuData();
+  Promise.all([
+    fetchMenuData(),
+    fetchAllTables()
+  ]);
 });
-// ===== END: แก้ไขส่วนข้อมูลเมนู =====
 
-
-// --- State ---
-const selectedPriceInfo = ref(null);
-const selectedNoodle = ref(null);
-const selectedOptions = ref([]);
-const order = ref([]);
-const isSubmitting = ref(false);
-const showOtherMenu = ref(false);
-const showNotes = ref(false);
-const showTableSelection = ref(false);
-const showCheckBillModal = ref(false);
-const activeTables = ref([]);
-const isLoadingActiveTables = ref(false);
-const orderSummaryEl = ref(null);
-const modalState = ref({ show: false, title: '', message: '', status: 'success' });
-const modalTimer = ref(null);
-
-// --- Computed Properties ---
-const totalQuantity = computed(() => order.value.reduce((sum, item) => sum + item.quantity, 0));
-const isReadyToAdd = computed(() => !!selectedPriceInfo.value && !!selectedNoodle.value);
-const totalPrice = computed(() => order.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
-
-// --- Functions ---
+// --- ฟังก์ชัน Helpers ---
 function showModal(title, message, status = 'success') {
   if (modalTimer.value) clearTimeout(modalTimer.value);
   modalState.value = { show: true, title, message, status };
   if (status === 'success') setTimeout(closeModal, 2500);
 }
+
 function closeModal() {
   if (modalTimer.value) clearTimeout(modalTimer.value);
   modalState.value.show = false;
 }
+
+function getUserId() {
+  let userId = localStorage.getItem('noodleShopUserId');
+  if (!userId) {
+    userId = `user_${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    localStorage.setItem('noodleShopUserId', userId);
+  }
+  return userId;
+}
+
+function isTableActive(tableNum) {
+  return activeTables.value.some(activeTable => activeTable.table_number == tableNum);
+}
+
+function createCompositeId(name, size, options) {
+  const sortedOptions = [...options].sort().join(',');
+  return `${name}-${size}-${sortedOptions}`;
+}
+
+function resetCurrentSelection() {
+  selectedNoodle.value = null;
+  selectedOptions.value = [];
+  // showNotes ไม่ต้อง reset เป็น false แล้ว
+  showAllNotes.value = false;
+}
+
+function upsertItemInOrder(itemData) {
+  const existingItem = order.value.find(item => item.id === itemData.id);
+  if (existingItem) {
+    existingItem.quantity++;
+    const itemIndex = order.value.findIndex(item => item.id === itemData.id);
+    if (itemIndex > -1) {
+      const [item] = order.value.splice(itemIndex, 1);
+      order.value.unshift(item);
+    }
+  } else {
+    order.value.unshift({ ...itemData, quantity: 1 });
+  }
+}
+
+// --- ฟังก์ชันจัดการ Order ---
+function selectPrice(priceInfo) {
+  selectedPriceInfo.value = priceInfo;
+  nextTick(() => {
+    noodleSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+function selectNoodle(noodleObject) {
+  selectedNoodle.value = noodleObject;
+  nextTick(() => {
+    addToOrderButtonEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+function addItemToOrder() {
+  if (!isReadyToAdd.value) {
+    alert('กรุณาเลือกขนาดชามและเส้นก่อนครับ');
+    return;
+  }
+  upsertItemInOrder({
+    id: createCompositeId(selectedNoodle.value.name, selectedPriceInfo.value.size, selectedOptions.value),
+    name: selectedNoodle.value.name,
+    size: selectedPriceInfo.value.size,
+    price: selectedPriceInfo.value.price,
+    options: [...selectedOptions.value],
+  });
+  resetCurrentSelection();
+  nextTick(() => sizeSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+function addOtherItem(itemToAdd) {
+  upsertItemInOrder({
+    id: createCompositeId(itemToAdd.name, null, []),
+    name: itemToAdd.name,
+    size: null,
+    price: itemToAdd.price,
+    options: [],
+  });
+}
+
+function increaseQuantity(itemId) {
+  const item = order.value.find(p => p.id === itemId);
+  if (item) item.quantity++;
+}
+
+function decreaseQuantity(itemId) {
+  const item = order.value.find(p => p.id === itemId);
+  if (item) {
+    item.quantity--;
+    if (item.quantity === 0) {
+      removeItem(itemId);
+    }
+  }
+}
+
+function removeItem(itemId) {
+  order.value = order.value.filter(item => item.id !== itemId);
+}
+
+function toggleOption(option) {
+  if (!selectedNoodle.value) {
+    alert('กรุณาเลือกเส้นก่อนครับ');
+    return;
+  }
+  const index = selectedOptions.value.indexOf(option);
+  if (index > -1) {
+    selectedOptions.value.splice(index, 1);
+  } else {
+    selectedOptions.value.push(option);
+  }
+}
+
+function scrollToOrderSummary() {
+  orderSummaryEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// --- ฟังก์ชันจัดการ Modal และการส่งข้อมูล ---
 async function openCheckBillModal() {
   isLoadingActiveTables.value = true;
   showCheckBillModal.value = true;
@@ -91,27 +218,82 @@ async function openCheckBillModal() {
     isLoadingActiveTables.value = false;
   }
 }
+
 function loadOrderForTable(tableNum) {
   showCheckBillModal.value = false;
   return navigateTo(`/check-bill/${tableNum}`);
 }
-function getUserId() {
-  let userId = localStorage.getItem('noodleShopUserId');
-  if (!userId) {
-    userId = 'user_' + Date.now() + Math.floor(Math.random() * 1000);
-    localStorage.setItem('noodleShopUserId', userId);
+
+async function handleOrderSubmission() {
+  if (order.value.length === 0) {
+    showModal('รายการว่าง', 'กรุณาเพิ่มรายการอาหารก่อน', 'warning');
+    return;
   }
-  return userId;
+  isLoadingTablesForSelection.value = true;
+  showTableSelection.value = true;
+  try {
+    const response = await fetch(`${API_URL}/active_orders`);
+    if (!response.ok) throw new Error('ไม่สามารถดึงข้อมูลโต๊ะได้');
+    activeTables.value = await response.json();
+  } catch (error) {
+    console.error("Error fetching active tables for selection:", error);
+    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดสถานะโต๊ะได้', 'error');
+    showTableSelection.value = false;
+  } finally {
+    isLoadingTablesForSelection.value = false;
+  }
 }
+
+async function selectTableAndSubmit(newTableNumber) {
+  if (isTableActive(newTableNumber)) {
+    showModal('โต๊ะไม่ว่าง', `โต๊ะ ${newTableNumber} มีลูกค้าใช้งานอยู่แล้ว`, 'error');
+    return;
+  }
+  tableNumber.value = newTableNumber;
+  showTableSelection.value = false;
+  await submitOrder();
+}
+
 async function submitOrder() {
   isSubmitting.value = true;
   try {
-    const sortedOrder = [...order.value].sort((a, b) => { const t = null !== a.size, e = null !== b.size; return t && !e ? -1 : !t && e ? 1 : 0 });
-    const itemsPayload = sortedOrder.map((item, index) => { const t = null !== item.size; return { item_number: index + 1, menu_name: t ? "ก๋วยเตี๋ยว" : item.name, noodle_type: t ? item.name : "", size: item.size || "", quantity: item.quantity, unit_price: item.price, sub_total: item.price * item.quantity, item_notes: item.options || [] } });
-    const now = new Date;
-    const payload = { table_number: String(tableNumber.value), user_id: getUserId(), order_timestamp: now.toISOString(), status: "open", total_amount: totalPrice.value, items: itemsPayload };
-    const response = await fetch(`${API_URL}/submit_order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (!response.ok) { const t = await response.json().catch(() => ({ message: "ไม่สามารถอ่านข้อมูลข้อผิดพลาดได้" })); throw new Error(`Server ตอบกลับมาว่า: ${response.status} - ${t.message || "ข้อผิดพลาดไม่ทราบสาเหตุ"}`) }
+    const sortedOrder = [...order.value].sort((a, b) => {
+      const isANoodle = a.size !== null;
+      const isBNoodle = b.size !== null;
+      if (isANoodle && !isBNoodle) return -1;
+      if (!isANoodle && isBNoodle) return 1;
+      return 0;
+    });
+    const itemsPayload = sortedOrder.map((item, index) => {
+      const isNoodle = item.size !== null;
+      return {
+        item_number: index + 1,
+        menu_name: isNoodle ? "ก๋วยเตี๋ยว" : item.name,
+        noodle_type: isNoodle ? item.name : "",
+        size: item.size || "",
+        quantity: item.quantity,
+        unit_price: item.price,
+        sub_total: item.price * item.quantity,
+        item_notes: item.options || []
+      };
+    });
+    const payload = {
+      table_number: String(tableNumber.value),
+      user_id: getUserId(),
+      order_timestamp: new Date().toISOString(),
+      status: "open",
+      total_amount: totalPrice.value,
+      items: itemsPayload
+    };
+    const response = await fetch(`${API_URL}/submit_order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "ไม่สามารถอ่านข้อมูลข้อผิดพลาดได้" }));
+      throw new Error(`Server ตอบกลับมาว่า: ${response.status} - ${errorData.message || "ข้อผิดพลาดไม่ทราบสาเหตุ"}`);
+    }
     showModal("สำเร็จ", `ส่งรายการสั่งซื้อโต๊ะ ${tableNumber.value} เรียบร้อยแล้ว!`, "success");
     order.value = [];
     selectedPriceInfo.value = null;
@@ -121,75 +303,11 @@ async function submitOrder() {
       sizeSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   } catch (error) {
-    showModal("เกิดข้อผิดพลาด", error.message, "error")
+    showModal("เกิดข้อผิดพลาด", error.message, "error");
   } finally {
-    isSubmitting.value = false
+    isSubmitting.value = false;
   }
 }
-function handleOrderSubmission() {
-  if (order.value.length === 0) {
-    showModal('รายการว่าง', 'กรุณาเพิ่มรายการอาหารก่อนยืนยันการสั่งซื้อ', 'warning');
-    return;
-  }
-  showTableSelection.value = true;
-}
-async function selectTableAndSubmit(newTableNumber) {
-  tableNumber.value = newTableNumber;
-  showTableSelection.value = false;
-  await submitOrder();
-}
-function createCompositeId(name, size, options) { const sortedOptions = [...options].sort().join(','); return `${name}-${size}-${sortedOptions}`; }
-function resetCurrentSelection() { selectedNoodle.value = null; selectedOptions.value = []; showNotes.value = false; }
-function selectPrice(priceInfo) {
-  selectedPriceInfo.value = priceInfo;
-  nextTick(() => {
-    noodleSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-}
-function selectNoodle(noodleObject) {
-  selectedNoodle.value = noodleObject;
-  nextTick(() => {
-    addToOrderButtonEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-}
-function addItemToOrder() {
-  if (!isReadyToAdd.value) { alert('กรุณาเลือกขนาดชามและเส้นก่อนครับ'); return; }
-  const itemId = createCompositeId(selectedNoodle.value.name, selectedPriceInfo.value.size, selectedOptions.value);
-  const existingItem = order.value.find(item => item.id === itemId);
-  if (existingItem) {
-    existingItem.quantity++;
-    const itemIndex = order.value.findIndex(item => item.id === itemId);
-    if(itemIndex > -1) {
-      const [item] = order.value.splice(itemIndex, 1);
-      order.value.unshift(item);
-    }
-  } else {
-    order.value.unshift({ id: itemId, name: selectedNoodle.value.name, size: selectedPriceInfo.value.size, price: selectedPriceInfo.value.price, options: [...selectedOptions.value], quantity: 1 });
-  }
-  resetCurrentSelection();
-  nextTick(() => {
-    sizeSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-}
-function addOtherItem(itemToAdd) {
-    const itemId = itemToAdd.name;
-    const existingItem = order.value.find(item => item.id === itemId);
-    if (existingItem) {
-        existingItem.quantity++;
-        const itemIndex = order.value.findIndex(item => item.id === itemId);
-        if(itemIndex > -1) {
-            const [item] = order.value.splice(itemIndex, 1);
-            order.value.unshift(item);
-        }
-    } else {
-        order.value.unshift({ id: itemId, name: itemToAdd.name, size: null, price: itemToAdd.price, options: [], quantity: 1 });
-    }
-}
-function toggleOption(option) { if (!selectedNoodle.value) { alert('กรุณาเลือกเส้นก่อนครับ'); return; } const index = selectedOptions.value.indexOf(option); if (index > -1) { selectedOptions.value.splice(index, 1); } else { selectedOptions.value.push(option); } }
-function increaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity++; } }
-function decreaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity--; if (item.quantity === 0) { removeItem(itemId); } } }
-function removeItem(itemId) { order.value = order.value.filter(item => item.id !== itemId); }
-function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.value.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
 </script>
 
 <template>
@@ -200,21 +318,34 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
     :status="modalState.status"
     @close="closeModal"
   />
+
   <div v-if="showTableSelection" @click.self="showTableSelection = false" class="z-50 fixed inset-0 bg-black/60 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md animate-fade-in">
           <div class="flex justify-between items-center mb-6">
               <h3 class="text-2xl font-bold">เลือกโต๊ะสำหรับออเดอร์นี้</h3>
-              <button @click="showTableSelection = false" class="text-gray-400 hover:text-gray-600">
-                  <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-              </button>
+              <button @click="showTableSelection = false" class="text-gray-400 hover:text-gray-600">&times;</button>
           </div>
-          <div class="grid grid-cols-4 sm:grid-cols-5 gap-3">
-              <button v-for="n in 10" :key="n" @click="selectTableAndSubmit(n)" class="py-4 rounded-lg border-2 text-xl font-bold transition-all bg-slate-50 hover:bg-blue-100 hover:border-blue-400">
-                  {{ n }}
+          <div v-if="isLoadingTablesForSelection" class="text-center py-10">
+              <p class="text-gray-500 animate-pulse">กำลังตรวจสอบสถานะโต๊ะ...</p>
+          </div>
+          <div v-else class="grid grid-cols-4 sm:grid-cols-5 gap-3">
+              <button 
+                v-for="table in allTables" 
+                :key="table.table_id" 
+                @click="selectTableAndSubmit(table.table_number)"
+                :disabled="isTableActive(table.table_number)"
+                class="py-4 rounded-lg border-2 text-xl font-bold transition-all"
+                :class="{
+                  'bg-slate-50 hover:bg-blue-100 hover:border-blue-400': !isTableActive(table.table_number),
+                  'bg-red-100 border-red-300 text-red-500 cursor-not-allowed opacity-60': isTableActive(table.table_number)
+                }"
+              >
+                  {{ table.table_number }}
               </button>
           </div>
       </div>
   </div>
+
   <div v-if="showCheckBillModal" @click.self="showCheckBillModal = false" class="z-50 fixed inset-0 bg-black/60 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg animate-fade-in">
           <div class="flex justify-between items-center mb-6">
@@ -263,7 +394,7 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
             </div>
             <button @click="openCheckBillModal" class="bg-orange-500 text-white font-bold py-3 px-5 rounded-lg shadow-md hover:bg-orange-600 transition-all flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2-2z" />
                 </svg>
                 เช็คบิล
             </button>
@@ -288,18 +419,26 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
               </button>
             </div>
           </section>
+          
           <section class="mb-8" :class="{ 'opacity-30 pointer-events-none': !selectedNoodle }">
-            <button @click="showNotes = !showNotes" class="w-full flex justify-between items-center text-left border-b pb-3 mb-4 transition-colors hover:bg-slate-50 p-2 -m-2 rounded-lg">
-                <h2 class="text-xl font-semibold text-slate-700">3. เพิ่มหมายเหตุ (ถ้ามี)</h2>
-                <svg :class="{'rotate-180': showNotes}" class="w-6 h-6 transition-transform duration-300 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-            </button>
+            <h2 class="text-xl font-semibold text-slate-700 border-b pb-3 mb-4">3. เพิ่มหมายเหตุ (ถ้ามี)</h2>
             <div v-if="showNotes" class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 animate-fade-in">
-              <button v-for="option in extraOptions" :key="option" @click="toggleOption(option)" class="p-4 rounded-lg border-2 transition-all" :class="{'bg-amber-400 border-amber-500 text-white scale-105 shadow-md': selectedOptions.includes(option), 'bg-slate-50 hover:border-amber-500': !selectedOptions.includes(option) }">
-                {{ option }}
-              </button>
+              <template v-if="showAllNotes">
+                <button v-for="option in extraOptions" :key="option" @click="toggleOption(option)" class="p-4 rounded-lg border-2 transition-all" :class="{'bg-amber-400 border-amber-500 text-white scale-105 shadow-md': selectedOptions.includes(option), 'bg-slate-50 hover:border-amber-500': !selectedOptions.includes(option) }">
+                  {{ option }}
+                </button>
+              </template>
+              <template v-else>
+                 <button v-for="option in initialNotes" :key="option" @click="toggleOption(option)" class="p-4 rounded-lg border-2 transition-all" :class="{'bg-amber-400 border-amber-500 text-white scale-105 shadow-md': selectedOptions.includes(option), 'bg-slate-50 hover:border-amber-500': !selectedOptions.includes(option) }">
+                  {{ option }}
+                </button>
+                <button v-if="extraOptions.length > 5" @click="showAllNotes = true" class="p-4 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 bg-slate-50 hover:border-slate-400 hover:text-slate-700 transition-all">
+                  ... ดูทั้งหมด
+                </button>
+              </template>
             </div>
           </section>
-           <section ref="addToOrderButtonEl" class="mt-8 pt-6 border-t">
+          <section ref="addToOrderButtonEl" class="mt-8 pt-6 border-t">
             <button @click="addItemToOrder" :disabled="!isReadyToAdd" class="w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition-all disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center text-lg shadow-lg hover:shadow-xl disabled:shadow-none">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="mr-3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               เพิ่มก๋วยเตี๋ยวลงรายการ

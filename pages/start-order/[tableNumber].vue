@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 
-const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms'; 
+const config = useRuntimeConfig();
+const API_URL = config.public.apiUrl; // <-- ดึงค่ามาจาก ENV ผ่าน runtimeConfig
 const route = useRoute();
 const tableNumber = route.params.tableNumber;
 const errorMessage = ref('');

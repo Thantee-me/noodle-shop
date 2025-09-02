@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 
-// --- การตั้งค่าและข้อมูลหลัก ---
-const API_URL = 'https://tx9j0chj-5001.asse.devtunnels.ms';
+const config = useRuntimeConfig();
+const API_URL = config.public.apiUrl;
 const route = useRoute();
 const router = useRouter();
 const tableNumber = ref(route.params.tableNumber);
@@ -241,18 +241,34 @@ function addItemToOrder() {
   resetCurrentSelection();
   nextTick(() => { sizeSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 }
+// ... โค้ดส่วนอื่น ...
+
 function addOtherItem(itemToAdd) {
+    // ใช้ createCompositeId เพื่อให้ได้ id ที่ถูกต้องและสอดคล้องกัน
     const itemId = createCompositeId(itemToAdd.name, null, []);
     const existingItemIndex = order.value.findIndex(item => item.id === itemId);
+
     if (existingItemIndex > -1) {
+        // ถ้ามีรายการนี้อยู่แล้ว ให้เพิ่มจำนวน (quantity)
         const existingItem = order.value[existingItemIndex];
         existingItem.quantity++;
+        // ย้ายรายการที่เพิ่งอัปเดตไปไว้บนสุดของ list
         const [item] = order.value.splice(existingItemIndex, 1);
         order.value.unshift(item);
     } else {
-        order.value.unshift({ id: itemId, name: itemToAdd.name, size: null, price: itemToAdd.price, options: [], quantity: 1, isNew: true });
+        // ถ้ายังไม่มี ให้เพิ่มรายการใหม่เข้าไป
+        order.value.unshift({ 
+            id: itemId, 
+            name: itemToAdd.name, 
+            size: null, 
+            price: itemToAdd.price, 
+            options: [], 
+            quantity: 1, 
+            isNew: true // ระบุว่าเป็นรายการใหม่
+        });
     }
 }
+
 function toggleOption(option) { if (!selectedNoodle.value) { alert('กรุณาเลือกเส้นก่อนครับ'); return; } const index = selectedOptions.value.indexOf(option); if (index > -1) { selectedOptions.value.splice(index, 1); } else { selectedOptions.value.push(option); } }
 function increaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity++; } }
 function decreaseQuantity(itemId) { const item = order.value.find(p => p.id === itemId); if (item) { item.quantity--; if (item.quantity === 0) { removeItem(itemId); } } }
