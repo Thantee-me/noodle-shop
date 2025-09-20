@@ -428,12 +428,25 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
                 {{ index + 1 }}. {{ item.name }}
                 <span class="text-red-500 font-bold ml-2">x {{ item.quantity }}</span>
               </p>
-              <div class="flex justify-between items-center mt-1.5">
-                <p v-if="item.size" class="text-sm text-slate-600 bg-slate-200 px-2 py-0.5 rounded-full">ขนาด {{
-                  item.size }}</p>
+            <div class="flex justify-between items-center mt-1.5">
+                <p v-if="item.size" class="text-sm text-slate-600 bg-slate-200 px-2 py-0.5 rounded-full">ขนาด {{ item.size }}</p>
                 <div v-else></div>
-                <p class="text-base font-bold text-slate-800">{{ item.price * item.quantity }} บาท</p>
-              </div>
+
+                <div class="flex items-center gap-2">
+                    <template v-if="item.name === 'ลูกชิ้นทอด'">
+                        <input 
+                            type="number" 
+                            v-model.number="item.price" 
+                            class="w-20 text-right font-bold bg-white border border-slate-300 rounded-md p-1 focus:ring-2 focus:ring-blue-400 focus:outline-none shadow-inner"
+                        />
+                        <span class="text-base font-bold text-slate-800">บาท</span>
+                    </template>
+
+                    <template v-else>
+                        <p class="text-base font-bold text-slate-800">{{ item.price * item.quantity }} บาท</p>
+                    </template>
+                </div>
+                </div>
               <div v-if="item.options.length > 0" class="mt-2 text-sm text-amber-800 bg-amber-100 p-2 rounded-md">
                 <p class="break-words">
                   <span class="font-medium">หมายเหตุ:</span> {{ item.options.join(', ') }}

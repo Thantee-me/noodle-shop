@@ -12,13 +12,13 @@ const today = new Date().toISOString().split('T')[0];
 const startDate = ref(today);
 const endDate = ref(today);
 
-// --- State ใหม่สำหรับเก็บข้อมูลรายจ่าย (เหมือนเดิม) ---
+// --- State ใหม่สำหรับเก็บข้อมูลรายจ่าย ---
 const expenseData = ref(null);
 
-// --- 1. State ใหม่สำหรับจัดการ Modal ---
+// --- State สำหรับจัดการ Modal ---
 const selectedImage = ref(null); // จะเก็บ URL ของรูปภาพที่ถูกเลือก
 
-// --- ฟังก์ชันดึงข้อมูล (อัปเดตแล้ว) ---
+// --- ฟังก์ชันดึงข้อมูล ---
 async function fetchAllData() {
   isLoading.value = true;
   error.value = null;
@@ -26,7 +26,6 @@ async function fetchAllData() {
   try {
     const [summaryResponse, expenseResponse] = await Promise.all([
       fetch(`${API_URL}/dashboard/summary?start_date=${startDate.value}&end_date=${endDate.value}`),
-      // ✅  แก้ไขตรงนี้: เพิ่ม start_date และ end_date เข้าไปใน request ของ expense
       fetch(`${API_URL}/transactions/expense?start_date=${startDate.value}&end_date=${endDate.value}`) 
     ]);
 
@@ -37,10 +36,7 @@ async function fetchAllData() {
     const expenseJson = await expenseResponse.json();
 
     summaryData.value = summaryJson;
-    // API ของ expense อาจจะส่งข้อมูลกลับมาในรูปแบบ { data: [...] } เหมือน API อื่นๆ
-    // ถ้าข้อมูลไม่ขึ้น ให้ลองตรวจสอบโครงสร้าง JSON ที่ได้กลับมา
     expenseData.value = Array.isArray(expenseJson) ? expenseJson : expenseJson.data;
-
 
   } catch (err) {
     console.error("Error fetching data:", err);
@@ -52,7 +48,7 @@ async function fetchAllData() {
   }
 }
 
-// --- Computed Property (เหมือนเดิม) ---
+// --- Computed Property ---
 const totalExpense = computed(() => {
   if (!expenseData.value || !Array.isArray(expenseData.value) || expenseData.value.length === 0) return 0;
   return expenseData.value.reduce((total, item) => total + item.amount, 0);
@@ -61,7 +57,7 @@ const totalExpense = computed(() => {
 onMounted(fetchAllData);
 watch([startDate, endDate], fetchAllData);
 
-// --- ฟังก์ชัน Helpers (เหมือนเดิม) ---
+// --- ฟังก์ชัน Helpers ---
 function formatCurrency(value) {
   if (value === null || value === undefined) return '฿0';
   return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -77,15 +73,12 @@ function formatDateTime(isoString) {
   }).format(date);
 }
 
-// --- 2. ฟังก์ชันสำหรับเปิด-ปิด Modal ---
-function showImageModal(imagePath) {
-  if (!imagePath) return;
-  // ดึงเอาเฉพาะชื่อไฟล์จาก path เต็มๆ ที่ API ส่งมา
-  // เช่น "saved_images/file.jpg" หรือ "saved_images\file.jpg" -> "file.jpg"
-  const filename = imagePath.split(/[\\/]/).pop();
-  
-  // สร้าง URL เต็มเพื่อเรียกไปที่ endpoint /images/<filename>
-  selectedImage.value = `${API_URL}/images/${filename}`;
+// --- 🌟 จุดที่แก้ไข: ฟังก์ชันสำหรับเปิด-ปิด Modal ---
+function showImageModal(imageUrl) {
+  // เนื่องจาก API ส่ง URL เต็มๆ จาก Firebase มาให้แล้ว
+  // เราจึงสามารถใช้ URL นั้นได้โดยตรง ไม่ต้องสร้าง URL ใหม่
+  if (!imageUrl) return;
+  selectedImage.value = imageUrl;
 }
 
 function closeImageModal() {
@@ -245,6 +238,7 @@ function closeImageModal() {
       </div>
     </div>
 
+    <!-- ส่วนของ Modal (ไม่เปลี่ยนแปลง) -->
     <div v-if="selectedImage" @click="closeImageModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 transition-opacity duration-300">
       <div @click.stop class="relative bg-white p-2 rounded-lg shadow-xl max-w-lg w-full">
         <button @click="closeImageModal" class="absolute -top-4 -right-4 bg-white text-black rounded-full h-9 w-9 flex items-center justify-center font-bold text-xl z-10 shadow-lg">&times;</button>
