@@ -277,11 +277,9 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
 </script>
 
 <template>
-  <!-- Modal หลัก -->
   <Modal :show="modalState.show" :title="modalState.title" :message="modalState.message" :status="modalState.status"
     @close="closeModal" />
   
-  <!-- Modal ยืนยันการยกเลิก -->
   <div v-if="showCancelConfirmModal" @click.self="showCancelConfirmModal = false" class="z-50 fixed inset-0 bg-black/60 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm animate-fade-in text-center">
         <h3 class="text-2xl font-bold text-red-600">ยืนยันการยกเลิก</h3>
@@ -293,7 +291,6 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
     </div>
   </div>
 
-  <!-- Modal ย้ายโต๊ะ -->
   <div v-if="showMoveTableModal" @click.self="showMoveTableModal = false"
     class="z-50 fixed inset-0 bg-black/60 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg animate-fade-in">
@@ -477,41 +474,30 @@ function scrollToOrderSummary() { if (orderSummaryEl.value) { orderSummaryEl.val
               <span>รวมทั้งหมด:</span>
               <span>{{ totalPrice }} บาท</span>
             </div>
-            <!-- ปุ่ม Action หลัก -->
-            <div class="mt-4 grid grid-cols-2 gap-3">
-              <button @click="submitOrder({showAlert: true, printTicket: true})" :disabled="isSubmitting"
-                class="w-full bg-blue-500 text-white font-bold py-3 rounded-lg hover:bg-blue-600 transition-all disabled:bg-slate-400">
-                {{ isSubmitting ? 'กำลังอัปเดต...' : 'อัปเดตรายการ' }}
+            <div class="mt-4 grid grid-cols-2 gap-4"> <button @click="submitOrder({showAlert: true, printTicket: true})" :disabled="isSubmitting"
+                class="w-full bg-blue-500 text-white font-bold py-4 rounded-xl hover:bg-blue-600 transition-all disabled:bg-slate-400 text-lg"> {{ isSubmitting ? 'กำลังอัปเดต...' : 'อัปเดตรายการ' }}
               </button>
               <button @click="checkoutAndPrint" :disabled="isSubmitting"
-                class="w-full bg-teal-500 text-white font-bold py-3 rounded-lg hover:bg-teal-600 transition-all disabled:bg-slate-400">
-                คิดเงินและพิมพ์
+                class="w-full bg-teal-500 text-white font-bold py-4 rounded-xl hover:bg-teal-600 transition-all disabled:bg-slate-400 text-lg"> คิดเงินและพิมพ์
               </button>
             </div>
-            <!-- ปุ่ม Action รอง -->
-            <div class="mt-3 grid grid-cols-2 gap-3">
-                <button @click="reprintBill" :disabled="isSubmitting"
-                    class="w-full bg-sky-500 text-white font-semibold py-3 rounded-lg hover:bg-sky-600 transition-all disabled:bg-slate-400">
-                    ทวนรายการบิล
+            <div class="mt-3 grid grid-cols-2 gap-4"> <button @click="reprintBill" :disabled="isSubmitting"
+                    class="w-full bg-sky-500 text-white font-bold py-4 rounded-xl hover:bg-sky-600 transition-all disabled:bg-slate-400 text-lg"> ทวนรายการบิล
                 </button>
                 <button @click="checkoutSimple" :disabled="isSubmitting"
-                    class="w-full bg-green-500 text-white font-semibold py-3 rounded-lg hover:bg-green-600 transition-all disabled:bg-slate-400">
-                    คิดเงิน (ไม่ปริ้น)
+                    class="w-full bg-green-500 text-white font-bold py-4 rounded-xl hover:bg-green-600 transition-all disabled:bg-slate-400 text-lg"> คิดเงิน <br>(ไม่ปริ้น)
                 </button>
             </div>
-             <!-- ปุ่มยกเลิก -->
-            <div class="mt-3 grid grid-cols-1 gap-3">
-                <button @click="showCancelConfirmModal = true" :disabled="isSubmitting"
-                    class="w-full bg-red-600 text-white font-semibold py-3 rounded-lg hover:bg-red-700 transition-all disabled:bg-slate-400">
-                    ยกเลิก Order
+             <div class="mt-3 grid grid-cols-1 gap-4"> <button @click="showCancelConfirmModal = true" :disabled="isSubmitting"
+                    class="w-full bg-red-600 text-white font-bold py-4 rounded-xl hover:bg-red-700 transition-all disabled:bg-slate-400 text-lg"> ยกเลิก Order
                 </button>
             </div>
           </div>
-        </div>
+          </div>
       </div>
     </div>
   </main>
-</template>
+</template>firebase deploy
 
 <style>
 @keyframes fade-in {
